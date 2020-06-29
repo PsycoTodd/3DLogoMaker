@@ -26,6 +26,10 @@ find_path(LIBIGL_INCLUDE_DIR igl/readOBJ.h
     PATH_SUFFIXES include
 )
 
+set(LIBIGL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../libigl/include")
+
+message(${LIBIGL_INCLUDE_DIR})
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(LIBIGL
     "\nlibigl not found --- You can download it using:\n\tgit clone https://github.com/libigl/libigl.git ${CMAKE_SOURCE_DIR}/../libigl"
