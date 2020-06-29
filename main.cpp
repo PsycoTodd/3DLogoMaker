@@ -1,5 +1,7 @@
+#include <igl/boundary_loop.h>
 #include <igl/opengl/glfw/Viewer.h>
 #include <igl/triangle/triangulate.h>
+#include <igl/writeSTL.h>
 #include "nlohmann/json.hpp"
 #include <fstream>
 #include <iostream>
@@ -90,7 +92,6 @@ int main(int argc, char **argv)
           H.conservativeResize(H.rows() + 1, Eigen::NoChange);
           V.conservativeResize(V.rows() + inV.rows(), Eigen::NoChange);
           E.conservativeResize(E.rows() + inE.rows(), Eigen::NoChange);
-          std::cout<<"****** " << inV.colwise().mean() <<std::endl;
           H.bottomRows(1) = inV.colwise().mean();
           V.bottomRows(inV.rows()) = inV;
           E.bottomRows(inE.rows()) = inE;
@@ -100,7 +101,62 @@ int main(int argc, char **argv)
   }
   igl::triangle::triangulate(V,E,H,"a5q",V2,F2);
 
+  V2.conservativeResize(V2.rows(), 3);
+  V2.rightCols(1) = 4 * Eigen::MatrixXd::Ones(V2.rows(), 1);
+
+  Eigen::MatrixXd Vext = V2 - Eigen::RowVector3d(0.0, 0.0, 8.0).replicate(V2.rows(), 1);
+  Eigen::MatrixXi Fext = F2;
+  int boffset = V2.rows();
+  Fext.array() += boffset;
+  Fext.col(1).swap(Fext.col(2));
+
+  std::vector<std::vector<int>> loops;
+  std::vector<Eigen::RowVector3i> sideTris;
+  igl::boundary_loop(F2, loops);
+
+  for(int i=0; i<loops.size(); ++i) {
+    std::vector<int>& curLoop = loops[i];
+    const int curLoopSize = curLoop.size();
+    for(int j=0; j<curLoopSize; ++j) {
+      Eigen::RowVector3i t1, t2;
+      t1 << curLoop[j]+boffset, curLoop[(j+1)%curLoopSize], curLoop[j];
+      t2 << curLoop[j]+boffset, curLoop[(j+1)%curLoopSize]+boffset, curLoop[(j+1)%curLoopSize];
+      sideTris.push_back(t1);
+      sideTris.push_back(t2);
+    }
+  }
+
+  Eigen::MatrixXi sideF(sideTris.size(), 3);
+  for(int i=0; i<sideF.rows(); ++i) {
+    sideF.row(i) = sideTris[i];
+  }
+
+  const int F2Rows = F2.rows();
+
+  V2.conservativeResize(V2.rows() + Vext.rows(), Eigen::NoChange);
+  F2.conservativeResize(F2.rows() + Fext.rows() + sideF.rows(), Eigen::NoChange);
+
+  V2.bottomRows(Vext.rows()) = Vext;
+  F2.middleRows(F2Rows, Fext.rows()) = Fext;
+  F2.bottomRows(sideF.rows()) = sideF;
+
   igl::opengl::glfw::Viewer viewer;
+
+
+  viewer.callback_key_down = 
+  [&V2, &F2]
+  (igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
+  {
+    if (key == 'S')
+    {
+      std::string outputFilePath("testLogo.stl");
+      igl::writeSTL(outputFilePath, V2, F2, false);
+      std::cout << "Saved to " << outputFilePath <<std::endl;
+      return true;
+    }
+    return true;
+  };
+
   viewer.data().set_mesh(V2, F2);
   viewer.launch();
 }
