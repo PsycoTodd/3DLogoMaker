@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1)
 project(3DLogoMaker)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-
+set(CMAKE_BUILD_TYPE Debug)
 # libigl
 ### Compile libigl in header-only mode for Python bindings
 option(LIBIGL_WITH_TRIANGLE          "Use Triangle"       ON)

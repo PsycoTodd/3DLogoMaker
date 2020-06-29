@@ -44,10 +44,10 @@ int setEdge(Eigen::MatrixXi& edgeMat, int& beginIndex) {
       edgeMat.row(i) << beginIndex + i, beginIndex;
     }
   }
-  beginIndex = edgeMat.rows();
+  beginIndex = beginIndex + edgeMat.rows();
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
   std::vector<Eigen::MatrixXd> contours;
   std::vector<std::vector<int>> layout;
@@ -56,9 +56,9 @@ int main(int argc, char *argv[])
   int firstId = 0, edgeIdOffset = 0;
   int parentId = -1;
   // Input polygon
-  Eigen::MatrixXd V;
-  Eigen::MatrixXi E;
-  Eigen::MatrixXd H;
+  Eigen::MatrixXd V(0, 2);
+  Eigen::MatrixXi E(0, 2);
+  Eigen::MatrixXd H(0, 2);
 
   // Triangulated interior
   Eigen::MatrixXd V2;
@@ -66,12 +66,17 @@ int main(int argc, char *argv[])
 
   while(firstId < layout.size()) {
     auto out = layout[firstId];
-    V = contours[firstId];
-    E.resize(V.rows(), 2);
-    setEdge(E, edgeIdOffset);
-    if(out[3] >= 0) {
+    Eigen::MatrixXd outV = contours[firstId];
+    Eigen::MatrixXi outE;
+    outE.resize(outV.rows(), 2);
+    setEdge(outE, edgeIdOffset);
+    V.conservativeResize(V.rows() + outV.rows(), Eigen::NoChange);
+    E.conservativeResize(E.rows() + outE.rows(), Eigen::NoChange);
+    V.bottomRows(outV.rows()) = outV;
+    E.bottomRows(outE.rows()) = outE;
+    if(out[2] >= 0) {
         std::queue<int> inQ;
-        inQ.push(out[3]);
+        inQ.push(out[2]);
         while(!inQ.empty()) {
           int child = inQ.front(); inQ.pop();
           auto in = layout[child];
@@ -80,15 +85,20 @@ int main(int argc, char *argv[])
           }
           Eigen::MatrixXd inV = contours[child];
           Eigen::MatrixXi inE;
+          inE.resize(inV.rows(), 2);
           setEdge(inE, edgeIdOffset);
-          H << H, inV.colwise().mean();
-          V << V, inV;
-          E << E, inE;
+          H.conservativeResize(H.rows() + 1, Eigen::NoChange);
+          V.conservativeResize(V.rows() + inV.rows(), Eigen::NoChange);
+          E.conservativeResize(E.rows() + inE.rows(), Eigen::NoChange);
+          std::cout<<"****** " << inV.colwise().mean() <<std::endl;
+          H.bottomRows(1) = inV.colwise().mean();
+          V.bottomRows(inV.rows()) = inV;
+          E.bottomRows(inE.rows()) = inE;
         }
     }
     firstId = out[0];
   }
-  igl::triangle::triangulate(V,E,H,"a0.5q",V2,F2);
+  igl::triangle::triangulate(V,E,H,"a5q",V2,F2);
 
   igl::opengl::glfw::Viewer viewer;
   viewer.data().set_mesh(V2, F2);
