@@ -1,5 +1,6 @@
 import cv2 as cv
 import json
+import subprocess
 
 def binarizeImage(imgPath):
     imgOrg = cv.flip(cv.imread(imgPath), 0)
@@ -12,12 +13,12 @@ def binarizeImage(imgPath):
 def getContourHierachy(img, imgOrg):
     contours, hierarchy = cv.findContours(img, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE)
 
-    img2 = cv.drawContours(imgOrg, contours, 1, (0, 255, 0), 1)
+    img2 = cv.drawContours(imgOrg, contours, -1, (0, 255, 0), 1)
     return img2, contours, hierarchy
 
 
 if __name__ == "__main__":
-    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/index.png')
+    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/ps.jpg')
     img2, contours, hierarchy  = getContourHierachy(img, imgOrg)
 
     data = {}
@@ -37,3 +38,11 @@ if __name__ == "__main__":
     cv.imshow('Org', img)
     cv.waitKey(0)
     cv.destroyAllWindows()
+
+    print("Call cpp to generate mesh.")
+
+    args = ('/home/todd/Documents/Workspace/maskProject/3DLogoMaker/build/3DLogoMaker_bin', 'B', './data.json', './test2.stl', 'a5q')
+    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
+    popen.wait()
+    output = popen.stdout.read()
+    print(output)

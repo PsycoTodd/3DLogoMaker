@@ -51,10 +51,19 @@ int setEdge(Eigen::MatrixXi& edgeMat, int& beginIndex) {
 
 int main(int argc, char **argv)
 {
+  if(argc < 5) {
+    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_Contour_Json> <Output_Stl_Path> <triangulationParameter>" <<std::endl;
+    return false;
+  }
+  bool interactiveMode = argv[1] == "I" ? true : false;
+  std::string inputJson = argv[2];
+  std::string outputPath = argv[3];
+  std::string triangulationSetting = argv[4];
+
   std::vector<Eigen::MatrixXd> contours;
   std::vector<std::vector<int>> layout;
   
-  loadContourData("../batchRunner/data.json", contours, layout);
+  loadContourData(inputJson, contours, layout);
   int firstId = 0, edgeIdOffset = 0;
   int parentId = -1;
   // Input polygon
@@ -99,7 +108,7 @@ int main(int argc, char **argv)
     }
     firstId = out[0];
   }
-  igl::triangle::triangulate(V,E,H,"a5q",V2,F2);
+  igl::triangle::triangulate(V,E,H,triangulationSetting,V2,F2); // u can use a5q for the setting.
 
   V2.conservativeResize(V2.rows(), 3);
   V2.rightCols(1) = 4 * Eigen::MatrixXd::Ones(V2.rows(), 1);
@@ -140,24 +149,30 @@ int main(int argc, char **argv)
   F2.middleRows(F2Rows, Fext.rows()) = Fext;
   F2.bottomRows(sideF.rows()) = sideF;
 
-  igl::opengl::glfw::Viewer viewer;
 
-
-  viewer.callback_key_down = 
-  [&V2, &F2]
-  (igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
+  if(interactiveMode)
   {
-    if (key == 'S')
+    igl::opengl::glfw::Viewer viewer;
+    viewer.callback_key_down = 
+    [&V2, &F2, &outputPath]
+    (igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
     {
-      std::string outputFilePath("testLogo.stl");
-      igl::writeSTL(outputFilePath, V2, F2, false);
-      std::cout << "Saved to " << outputFilePath <<std::endl;
+      if (key == 'S')
+      {
+        igl::writeSTL(outputPath, V2, F2, false);
+        std::cout << "Saved to " << outputPath <<std::endl;
+        return true;
+      }
       return true;
-    }
-    return true;
-  };
-
-  viewer.data().set_mesh(V2, F2);
-  viewer.launch();
+    };
+    viewer.data().set_mesh(V2, F2);
+    viewer.launch();
+  }
+  else
+  {
+    igl::writeSTL(outputPath, V2, F2, false);
+    std::cout << "Saved to " << outputPath <<std::endl;
+  }
+  return true;
 }
   
