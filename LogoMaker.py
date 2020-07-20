@@ -18,7 +18,7 @@ def getContourHierachy(img, imgOrg):
 
 
 if __name__ == "__main__":
-    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/ps.jpg')
+    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/target.png')
     img2, contours, hierarchy  = getContourHierachy(img, imgOrg)
 
     data = {}
@@ -34,6 +34,8 @@ if __name__ == "__main__":
     with open('data.json', 'w') as outfile:
         json.dump(data, outfile)
 
+    cv.imwrite('binary.png',img)
+
     cv.imshow('Contour', img2)
     cv.imshow('Org', img)
     cv.waitKey(0)
@@ -41,8 +43,8 @@ if __name__ == "__main__":
 
     print("Call cpp to generate mesh.")
 
-    args = ('/home/todd/Documents/Workspace/maskProject/3DLogoMaker/build/3DLogoMaker_bin', 'B', './data.json', './test2.stl', 'a5q')
-    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
-    popen.wait()
-    output = popen.stdout.read()
-    print(output)
+    #args = ('/home/todd/Documents/Workspace/maskProject/3DLogoMaker/build/3DLogoMaker_bin', 'B', './data.json', './test4.stl', 'a5q')
+    #popen = subprocess.Popen(args, stdout=subprocess.PIPE)
+    #popen.wait()
+    #output = popen.stdout.read()
+    #print(output)

@@ -1,6 +1,7 @@
 #include <igl/boundary_loop.h>
 #include <igl/opengl/glfw/Viewer.h>
 #include <igl/triangle/triangulate.h>
+#include <igl/png/readPNG.h>
 #include <igl/writeSTL.h>
 #include "nlohmann/json.hpp"
 #include <fstream>
@@ -49,16 +50,68 @@ int setEdge(Eigen::MatrixXi& edgeMat, int& beginIndex) {
   beginIndex = beginIndex + edgeMat.rows();
 }
 
+Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>
+loadImageRedChannel(const std::string& imgPath) 
+{
+  Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> r, g, b, a;
+  igl::png::readPNG(imgPath, r, g, b, a);
+  std::cout<<r<<std::endl;
+  return r;
+}
+
+Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour, 
+                                   Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>& img, 
+                                   size_t trails = 1000)
+{
+  size_t rcount = contour.rows();
+  double x, y;
+  Eigen::MatrixXd ret(1, 2);
+  ret.row(0) << -1, -1;
+  std::srand((unsigned int) 9);//time(0)); // set random for sampling the valid hole point.
+  for(size_t i = 0; i < trails; ++i)
+  {
+    Eigen::MatrixXd weight = Eigen::MatrixXd::Random(rcount, 1) + Eigen::MatrixXd::Constant(rcount, 1, 1);
+    int sum = weight.sum();
+    weight /= sum;
+    x = y = 0.0;
+    for(int j = 0; j < rcount;  ++j) 
+    {
+      x += contour.row(j)[0] * weight.row(j)[0];
+      y += contour.row(j)[1] * weight.row(j)[0];
+    }
+    if(abs(x - 501) < 20) {
+      y = 800;
+    }
+    size_t cols = img.cols();
+    size_t rows = img.rows();
+    unsigned char var = img(int(x), rows - int(y) - 1);
+    if(var == 0.f)
+    {
+      std::cout<<"Todd " << x << ' ' <<y << ' ' << var <<std::endl;
+      ret.row(0) << x, y;
+      return ret;
+    }
+    //std::cout<<"Todd fail " << x <<' ' << y <<' ' << var<< std::endl;
+    // just get the average.
+    //ret = contour.colwise().mean();
+    //return ret;
+  }
+  
+  return ret;
+}
+
 int main(int argc, char **argv)
 {
-  if(argc < 5) {
+  if(argc < 6) {
     std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_Contour_Json> <Output_Stl_Path> <triangulationParameter>" <<std::endl;
     return false;
   }
-  bool interactiveMode = argv[1] == "I" ? true : false;
+  std::string modeStr = argv[1];
+  bool interactiveMode = (modeStr == "I" ? true : false);
   std::string inputJson = argv[2];
   std::string outputPath = argv[3];
   std::string triangulationSetting = argv[4];
+  std::string imagePath = argv[5];
 
   std::vector<Eigen::MatrixXd> contours;
   std::vector<std::vector<int>> layout;
@@ -74,6 +127,9 @@ int main(int argc, char **argv)
   // Triangulated interior
   Eigen::MatrixXd V2;
   Eigen::MatrixXi F2;
+
+  Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> red = 
+    loadImageRedChannel(imagePath);
 
   while(firstId < layout.size()) {
     auto out = layout[firstId];
@@ -101,7 +157,12 @@ int main(int argc, char **argv)
           H.conservativeResize(H.rows() + 1, Eigen::NoChange);
           V.conservativeResize(V.rows() + inV.rows(), Eigen::NoChange);
           E.conservativeResize(E.rows() + inE.rows(), Eigen::NoChange);
-          H.bottomRows(1) = inV.colwise().mean();
+          H.bottomRows(1) = getOnePointOutside(inV, red);
+          if(H.row(0)[0] < 0) {
+            H.bottomRows(1) = inV.colwise().mean();
+            std::cout << "We cannot find the outside range in 1000 iteration, use fallback location." << std::endl;
+          }
+          //H.bottomRows(1) = 0.35 * inV.row(0) + 0.75 * inV.colwise().mean();
           V.bottomRows(inV.rows()) = inV;
           E.bottomRows(inE.rows()) = inE;
         }
