@@ -18,7 +18,7 @@ def getContourHierachy(img, imgOrg):
 
 
 if __name__ == "__main__":
-    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/target.png')
+    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/imdb.jpeg')
     img2, contours, hierarchy  = getContourHierachy(img, imgOrg)
 
     data = {}

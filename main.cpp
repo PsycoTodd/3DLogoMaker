@@ -55,8 +55,61 @@ loadImageRedChannel(const std::string& imgPath)
 {
   Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> r, g, b, a;
   igl::png::readPNG(imgPath, r, g, b, a);
-  std::cout<<r<<std::endl;
   return r;
+}
+
+Eigen::MatrixXd getOnePointOutside2(const Eigen::MatrixXd& contour, 
+                                    Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>& img, 
+                                    size_t neighborOffset = 10,
+                                    size_t testBlockNum = 20,
+                                    size_t trails = 1000)
+{
+  size_t rcount = contour.rows();
+  double x, y;
+  Eigen::MatrixXd ret(1, 2);
+  ret.row(0) << -1, -1;
+  std::srand((unsigned int)time(0)); // set random for sampling the valid hole point.
+  for(size_t i = 0; i < trails; ++i)
+  {
+    // sampleing a random index as the center of two neighbor vectors.
+    int id = rand() % rcount;
+    Eigen::Vector2d p0 = contour.row(id);
+    Eigen::Vector2d p1 = contour.row((id+rcount-neighborOffset%rcount) % rcount);
+    Eigen::Vector2d p2 = contour.row((id+neighborOffset%rcount ) % rcount);
+    Eigen::Vector2d v1 = p1 - p0;
+    Eigen::Vector2d v2 = p2 - p0;
+    double w1 = ((double) rand() / (RAND_MAX)) * 0.5;
+    double w2 = ((double) rand() / (RAND_MAX)) * 0.5;
+    Eigen::Vector2d vs = w1 * v1 + w2 * v2;
+    // Make sure betweeen p0 and ps there is no black spot.
+    double norm = vs.norm();
+    Eigen::Vector2d nor_vs = vs.normalized();
+    bool trueOut = true;
+    for(int i=1; i<=testBlockNum; ++i) {
+      Eigen::Vector2d psi = p0 + (norm / 20 * i) * nor_vs;
+      size_t cols = img.cols();
+      size_t rows = img.rows();
+      std::cout<<"ahahaaha " << psi.transpose()<<std::endl;
+      std::cout<<"xxxxx" << cols << " " <<rows <<std::endl;
+      std::cout<<"YYYYYYYYYYY" << int(psi.y()) << " " << rows - int(psi.x()) - 1<<std::endl;
+      std::cout<<"norm" << norm << " " << nor_vs<<std::endl;
+      if(psi.x() >= rows || psi.y() >= cols) { // out of range than the sample would also be out of range.
+        trueOut = false;
+        break;
+      }
+      unsigned char var = img(int(psi.x()), cols - int(psi.y()) - 1);
+      if(var != 0) {
+        trueOut = false;
+        break;
+      }
+    }
+    if(trueOut) {
+      Eigen::Vector2d ps = p0 + vs;
+      ret.row(0) << ps.x(), ps.y();
+      return ret;
+    }
+  }
+  return ret;
 }
 
 Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour, 
@@ -67,7 +120,7 @@ Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour,
   double x, y;
   Eigen::MatrixXd ret(1, 2);
   ret.row(0) << -1, -1;
-  std::srand((unsigned int) 9);//time(0)); // set random for sampling the valid hole point.
+  std::srand((unsigned int)time(0)); // set random for sampling the valid hole point.
   for(size_t i = 0; i < trails; ++i)
   {
     Eigen::MatrixXd weight = Eigen::MatrixXd::Random(rcount, 1) + Eigen::MatrixXd::Constant(rcount, 1, 1);
@@ -157,7 +210,7 @@ int main(int argc, char **argv)
           H.conservativeResize(H.rows() + 1, Eigen::NoChange);
           V.conservativeResize(V.rows() + inV.rows(), Eigen::NoChange);
           E.conservativeResize(E.rows() + inE.rows(), Eigen::NoChange);
-          H.bottomRows(1) = getOnePointOutside(inV, red);
+          H.bottomRows(1) = getOnePointOutside2(inV, red);
           if(H.row(0)[0] < 0) {
             H.bottomRows(1) = inV.colwise().mean();
             std::cout << "We cannot find the outside range in 1000 iteration, use fallback location." << std::endl;
