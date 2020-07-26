@@ -58,7 +58,7 @@ loadImageRedChannel(const std::string& imgPath)
   return r;
 }
 
-Eigen::MatrixXd getOnePointOutside2(const Eigen::MatrixXd& contour, 
+Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour, 
                                     Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>& img, 
                                     size_t neighborOffset = 10,
                                     size_t testBlockNum = 20,
@@ -89,10 +89,6 @@ Eigen::MatrixXd getOnePointOutside2(const Eigen::MatrixXd& contour,
       Eigen::Vector2d psi = p0 + (norm / 20 * i) * nor_vs;
       size_t cols = img.cols();
       size_t rows = img.rows();
-      std::cout<<"ahahaaha " << psi.transpose()<<std::endl;
-      std::cout<<"xxxxx" << cols << " " <<rows <<std::endl;
-      std::cout<<"YYYYYYYYYYY" << int(psi.y()) << " " << rows - int(psi.x()) - 1<<std::endl;
-      std::cout<<"norm" << norm << " " << nor_vs<<std::endl;
       if(psi.x() >= rows || psi.y() >= cols) { // out of range than the sample would also be out of range.
         trueOut = false;
         break;
@@ -109,47 +105,6 @@ Eigen::MatrixXd getOnePointOutside2(const Eigen::MatrixXd& contour,
       return ret;
     }
   }
-  return ret;
-}
-
-Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour, 
-                                   Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>& img, 
-                                   size_t trails = 1000)
-{
-  size_t rcount = contour.rows();
-  double x, y;
-  Eigen::MatrixXd ret(1, 2);
-  ret.row(0) << -1, -1;
-  std::srand((unsigned int)time(0)); // set random for sampling the valid hole point.
-  for(size_t i = 0; i < trails; ++i)
-  {
-    Eigen::MatrixXd weight = Eigen::MatrixXd::Random(rcount, 1) + Eigen::MatrixXd::Constant(rcount, 1, 1);
-    int sum = weight.sum();
-    weight /= sum;
-    x = y = 0.0;
-    for(int j = 0; j < rcount;  ++j) 
-    {
-      x += contour.row(j)[0] * weight.row(j)[0];
-      y += contour.row(j)[1] * weight.row(j)[0];
-    }
-    if(abs(x - 501) < 20) {
-      y = 800;
-    }
-    size_t cols = img.cols();
-    size_t rows = img.rows();
-    unsigned char var = img(int(x), rows - int(y) - 1);
-    if(var == 0.f)
-    {
-      std::cout<<"Todd " << x << ' ' <<y << ' ' << var <<std::endl;
-      ret.row(0) << x, y;
-      return ret;
-    }
-    //std::cout<<"Todd fail " << x <<' ' << y <<' ' << var<< std::endl;
-    // just get the average.
-    //ret = contour.colwise().mean();
-    //return ret;
-  }
-  
   return ret;
 }
 
@@ -210,7 +165,7 @@ int main(int argc, char **argv)
           H.conservativeResize(H.rows() + 1, Eigen::NoChange);
           V.conservativeResize(V.rows() + inV.rows(), Eigen::NoChange);
           E.conservativeResize(E.rows() + inE.rows(), Eigen::NoChange);
-          H.bottomRows(1) = getOnePointOutside2(inV, red);
+          H.bottomRows(1) = getOnePointOutside(inV, red);
           if(H.row(0)[0] < 0) {
             H.bottomRows(1) = inV.colwise().mean();
             std::cout << "We cannot find the outside range in 1000 iteration, use fallback location." << std::endl;
