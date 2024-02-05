@@ -1,12 +1,22 @@
 import cv2 as cv
 import json
 import subprocess
+import argparse
+import os
 
 def binarizeImage(imgPath):
     imgOrg = cv.flip(cv.imread(imgPath), 0)
     img = cv.cvtColor(imgOrg, cv.COLOR_BGR2GRAY)
     img = 255 - img
-    ret, thresh = cv.threshold(img, 50, 255, 0)
+    ret, thresh = cv.threshold(img, 10, 255, 0)
+    return imgOrg, thresh
+
+
+def binarizeAlphaImage(imgPath):
+    imgOrg = cv.flip(cv.imread(imgPath, cv.IMREAD_UNCHANGED), 0)
+    img = imgOrg[:,:,3]
+    #img = cv.cvtColor(alpha, cv.COLOR_BGR2GRAY)
+    ret, thresh = cv.threshold(img, 10, 255, 0)
     return imgOrg, thresh
     
 
@@ -17,8 +27,8 @@ def getContourHierachy(img, imgOrg):
     return img2, contours, hierarchy
 
 
-if __name__ == "__main__":
-    imgOrg, img = binarizeImage('/home/todd/Documents/Workspace/maskProject/Data/imdb.jpeg')
+def imageProcessing(input_path):
+    imgOrg, img = binarizeAlphaImage(input_path)
     img2, contours, hierarchy  = getContourHierachy(img, imgOrg)
 
     data = {}
@@ -41,10 +51,20 @@ if __name__ == "__main__":
     cv.waitKey(0)
     cv.destroyAllWindows()
 
-    print("Call cpp to generate mesh.")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser("LogoMaker 1.0")
+    parser.add_argument("-i", "--input", help="the input image that is binarized to create the 2.1D model", type=str)
+    parser.add_argument("-e", "--executable", help="the executable to create the model", type=str)
+    parser.add_argument("-o", "--output", help="the output obj path", type=str)
 
-    #args = ('/home/todd/Documents/Workspace/maskProject/3DLogoMaker/build/3DLogoMaker_bin', 'B', './data.json', './test4.stl', 'a5q')
-    #popen = subprocess.Popen(args, stdout=subprocess.PIPE)
-    #popen.wait()
-    #output = popen.stdout.read()
-    #print(output)
+    args = parser.parse_args()
+    imageProcessing(args.input)
+
+    print("Call cpp to generate mesh.")
+    if not os.path.exists(args.executable):
+        print("do not work on modeling part.")
+    args = (args.executable, 'B', './data.json', args.output, 'a1000q30', args.input) #a1000q30
+    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
+    popen.wait()
+    output = popen.stdout.read()
+    print(output)

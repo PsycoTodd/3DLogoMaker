@@ -1,20 +1,23 @@
 #include <igl/boundary_loop.h>
 #include <igl/opengl/glfw/Viewer.h>
 #include <igl/triangle/triangulate.h>
-#include <igl/png/readPNG.h>
-#include <igl/writeSTL.h>
+#include <igl/stb/read_image.h>
+#include <igl/writeOBJ.h>
 #include "nlohmann/json.hpp"
 #include <fstream>
 #include <iostream>
 #include <queue>
 
-void loadContourData(const std::string& filePath, std::vector<Eigen::MatrixXd>& contours, std::vector<std::vector<int>>& layout)
+bool loadContourData(const std::string& filePath, std::vector<Eigen::MatrixXd>& contours, std::vector<std::vector<int>>& layout)
 {
   using json = nlohmann::json;
   std::ifstream file(filePath);
   json js;
   if(file.is_open()) {
     file >> js;
+  }
+  else {
+      return false;
   }
   json hi(js["hierarchy"]);
   for(int i=0; i<hi.size(); ++i) {
@@ -37,7 +40,7 @@ void loadContourData(const std::string& filePath, std::vector<Eigen::MatrixXd>& 
     contours.emplace_back(std::move(mat));
   }
 
-  return;
+  return true;
 }
 
 int setEdge(Eigen::MatrixXi& edgeMat, int& beginIndex) {
@@ -54,7 +57,7 @@ Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>
 loadImageRedChannel(const std::string& imgPath) 
 {
   Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> r, g, b, a;
-  igl::png::readPNG(imgPath, r, g, b, a);
+  igl::stb::read_image(imgPath, r, g, b, a);
   return r;
 }
 
@@ -71,7 +74,7 @@ Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour,
   std::srand((unsigned int)time(0)); // set random for sampling the valid hole point.
   for(size_t i = 0; i < trails; ++i)
   {
-    // sampleing a random index as the center of two neighbor vectors.
+    // sampling a random index as the center of two neighbor vectors.
     int id = rand() % rcount;
     Eigen::Vector2d p0 = contour.row(id);
     Eigen::Vector2d p1 = contour.row((id+rcount-neighborOffset%rcount) % rcount);
@@ -108,11 +111,24 @@ Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour,
   return ret;
 }
 
+Eigen::MatrixXd computeUVcoordinates(const Eigen::MatrixXd& vertices, size_t img_width, size_t img_height) {
+    Eigen::MatrixXd ret(0, 2);
+    if (img_width <= 0 || img_height <= 0) {
+        return ret;
+    }
+    ret.conservativeResize(vertices.rows(), Eigen::NoChange);
+    for (int i=0; i<vertices.rows(); ++i) {
+        const auto& vertex = vertices.row(i);
+        ret.row(i) << vertex.x() / img_width, vertex.y() / img_height;
+    }
+    return ret;
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 6) {
-    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_Contour_Json> <Output_Stl_Path> <triangulationParameter>" <<std::endl;
-    return false;
+    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_Contour_Json> <Output_Obj_Path> <triangulationParameter> <Original_image_path>" <<std::endl;
+    return -1;
   }
   std::string modeStr = argv[1];
   bool interactiveMode = (modeStr == "I" ? true : false);
@@ -124,7 +140,11 @@ int main(int argc, char **argv)
   std::vector<Eigen::MatrixXd> contours;
   std::vector<std::vector<int>> layout;
   
-  loadContourData(inputJson, contours, layout);
+  if (!loadContourData(inputJson, contours, layout)) {
+      std::cout<<"Cannot load the contour file. Stop generation.";
+      return -1;
+  }
+
   int firstId = 0, edgeIdOffset = 0;
   int parentId = -1;
   // Input polygon
@@ -182,7 +202,7 @@ int main(int argc, char **argv)
   V2.conservativeResize(V2.rows(), 3);
   V2.rightCols(1) = 4 * Eigen::MatrixXd::Ones(V2.rows(), 1);
 
-  Eigen::MatrixXd Vext = V2 - Eigen::RowVector3d(0.0, 0.0, 8.0).replicate(V2.rows(), 1);
+  Eigen::MatrixXd Vext = V2 - Eigen::RowVector3d(0.0, 0.0, input_thickness).replicate(V2.rows(), 1);
   Eigen::MatrixXi Fext = F2;
   int boffset = V2.rows();
   Fext.array() += boffset;
@@ -218,30 +238,35 @@ int main(int argc, char **argv)
   F2.middleRows(F2Rows, Fext.rows()) = Fext;
   F2.bottomRows(sideF.rows()) = sideF;
 
+  // Now build the UV coordinates. Since the vertex XY plane location is the pixel location in the original image
+  // we can just divide each pixel by the image dimension to get the UV.
+  Eigen::MatrixXd uv = computeUVcoordinates(V2, red.rows(), red.cols());
+  Eigen::MatrixXd dummy(0, 3);
 
   if(interactiveMode)
   {
     igl::opengl::glfw::Viewer viewer;
     viewer.callback_key_down = 
-    [&V2, &F2, &outputPath]
+    [&V2, &F2, &outputPath, &dummy, &uv]
     (igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
     {
       if (key == 'S')
       {
-        igl::writeSTL(outputPath, V2, F2, false);
+        igl::writeOBJ(outputPath, V2, F2, dummy, dummy, uv, F2);
         std::cout << "Saved to " << outputPath <<std::endl;
         return true;
       }
       return true;
     };
-    viewer.data().set_mesh(V2, F2);
+    viewer.data().set_mesh(V2, F2 );
+    viewer.data().set_uv(uv, F2);
     viewer.launch();
   }
   else
   {
-    igl::writeSTL(outputPath, V2, F2, false);
+    igl::writeOBJ(outputPath, V2, F2, dummy, dummy, uv, F2);
     std::cout << "Saved to " << outputPath <<std::endl;
   }
-  return true;
+  return 0;
 }
   
