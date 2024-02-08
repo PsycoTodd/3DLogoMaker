@@ -54,42 +54,54 @@ int setEdge(Eigen::MatrixXi& edgeMat, int& beginIndex) {
 }
 
 Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>
-loadImageRedChannel(const std::string& imgPath) 
+loadImageAlphaChannel(const std::string& imgPath)
 {
   Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> r, g, b, a;
   igl::stb::read_image(imgPath, r, g, b, a);
-  return r;
+  return a;
 }
 
-Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour, 
-                                    Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>& img, 
-                                    size_t neighborOffset = 10,
-                                    size_t testBlockNum = 20,
-                                    size_t trails = 1000)
+/**
+ * Randomly sample points inside the contour, if anyone is alpha zero,
+ * we know it is in the hole and not a valid part for modeling.
+ * @param contour The range inside we need to look for.
+ * @param img The image where background should have 0 alpha.
+ * @param neighborOffset The index offset of the contour points, we pick a random center id0,  id0 + neighborOffset,
+ * id0 - neighborOffset to build a angle. Then we build a vector between these two vector as the direction to search.
+ * @param testBlockNum For the search direction, how many pixels do we want to search before stopping.
+ * @param trails How many trails we want to do this until we find any pixel is the background?
+ * @return
+ */
+Eigen::MatrixXd getOnePointInBackground(const Eigen::MatrixXd& contour,
+                                        Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>& img,
+                                        size_t neighborOffset = 10,
+                                        size_t testBlockNum = 20,
+                                        size_t trails = 1000)
 {
   size_t rcount = contour.rows();
   double x, y;
-  Eigen::MatrixXd ret(1, 2);
-  ret.row(0) << -1, -1;
+  Eigen::MatrixXd ret(1, 2); // we just need one points.
+  ret.row(0) << -1, -1; // set invalid result
   std::srand((unsigned int)time(0)); // set random for sampling the valid hole point.
   for(size_t i = 0; i < trails; ++i)
   {
     // sampling a random index as the center of two neighbor vectors.
     int id = rand() % rcount;
+    // Build up two neighbor vectors.
     Eigen::Vector2d p0 = contour.row(id);
     Eigen::Vector2d p1 = contour.row((id+rcount-neighborOffset%rcount) % rcount);
-    Eigen::Vector2d p2 = contour.row((id+neighborOffset%rcount ) % rcount);
+    Eigen::Vector2d p2 = contour.row((id+neighborOffset%rcount) % rcount);
     Eigen::Vector2d v1 = p1 - p0;
     Eigen::Vector2d v2 = p2 - p0;
     double w1 = ((double) rand() / (RAND_MAX)) * 0.5;
     double w2 = ((double) rand() / (RAND_MAX)) * 0.5;
-    Eigen::Vector2d vs = w1 * v1 + w2 * v2;
-    // Make sure betweeen p0 and ps there is no black spot.
+    Eigen::Vector2d vs = w1 * v1 + w2 * v2; // So we make sure that we proceed inside of the contour region.
+    // Make sure that between p0 and ps there is no black spot.
     double norm = vs.norm();
     Eigen::Vector2d nor_vs = vs.normalized();
     bool trueOut = true;
     for(int i=1; i<=testBlockNum; ++i) {
-      Eigen::Vector2d psi = p0 + (norm / 20 * i) * nor_vs;
+      Eigen::Vector2d psi = p0 + (norm / testBlockNum * i) * nor_vs;
       size_t cols = img.cols();
       size_t rows = img.rows();
       if(psi.x() >= rows || psi.y() >= cols) { // out of range than the sample would also be out of range.
@@ -104,7 +116,7 @@ Eigen::MatrixXd getOnePointOutside(const Eigen::MatrixXd& contour,
     }
     if(trueOut) {
       Eigen::Vector2d ps = p0 + vs;
-      ret.row(0) << ps.x(), ps.y();
+      ret.row(0) << ps.x(), img.cols() - ps.y();
       return ret;
     }
   }
@@ -126,16 +138,17 @@ Eigen::MatrixXd computeUVcoordinates(const Eigen::MatrixXd& vertices, size_t img
 
 int main(int argc, char **argv)
 {
-  if(argc < 6) {
-    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_Contour_Json> <Output_Obj_Path> <triangulationParameter> <Original_image_path>" <<std::endl;
+  if(argc < 7) {
+    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_thickness> <input_Contour_Json> <Output_Obj_Path> <triangulationParameter> <Original_image_path>" <<std::endl;
     return -1;
   }
   std::string modeStr = argv[1];
   bool interactiveMode = (modeStr == "I" ? true : false);
-  std::string inputJson = argv[2];
-  std::string outputPath = argv[3];
-  std::string triangulationSetting = argv[4];
-  std::string imagePath = argv[5];
+  int input_thickness = atoi(argv[2]);
+  std::string inputJson = argv[3];
+  std::string outputPath = argv[4];
+  std::string triangulationSetting = argv[5];
+  std::string imagePath = argv[6];
 
   std::vector<Eigen::MatrixXd> contours;
   std::vector<std::vector<int>> layout;
@@ -156,10 +169,11 @@ int main(int argc, char **argv)
   Eigen::MatrixXd V2;
   Eigen::MatrixXi F2;
 
-  Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> red = 
-    loadImageRedChannel(imagePath);
+  Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> alpha =
+    loadImageAlphaChannel(imagePath);
 
   while(firstId < layout.size()) {
+    // For each individual components
     auto out = layout[firstId];
     Eigen::MatrixXd outV = contours[firstId];
     Eigen::MatrixXi outE;
@@ -169,13 +183,13 @@ int main(int argc, char **argv)
     E.conservativeResize(E.rows() + outE.rows(), Eigen::NoChange);
     V.bottomRows(outV.rows()) = outV;
     E.bottomRows(outE.rows()) = outE;
-    if(out[2] >= 0) {
+    if(out[2] >= 0) { // has hole.
         std::queue<int> inQ;
         inQ.push(out[2]);
-        while(!inQ.empty()) {
+        while(!inQ.empty()) { // BFS to get all parts in the hole.
           int child = inQ.front(); inQ.pop();
           auto in = layout[child];
-          if(in[0] >= 0) {
+          if(in[0] >= 0) { // we have multiple pieces inside the hole.
             inQ.push(in[0]);
           }
           Eigen::MatrixXd inV = contours[child];
@@ -185,7 +199,7 @@ int main(int argc, char **argv)
           H.conservativeResize(H.rows() + 1, Eigen::NoChange);
           V.conservativeResize(V.rows() + inV.rows(), Eigen::NoChange);
           E.conservativeResize(E.rows() + inE.rows(), Eigen::NoChange);
-          H.bottomRows(1) = getOnePointOutside(inV, red);
+          H.bottomRows(1) = getOnePointInBackground(inV, alpha);
           if(H.row(0)[0] < 0) {
             H.bottomRows(1) = inV.colwise().mean();
             std::cout << "We cannot find the outside range in 1000 iteration, use fallback location." << std::endl;
@@ -197,6 +211,7 @@ int main(int argc, char **argv)
     }
     firstId = out[0];
   }
+  // For (H)oles, we just need one 2D location in the background. libigl then can take care of the job.
   igl::triangle::triangulate(V,E,H,triangulationSetting,V2,F2); // u can use a5q for the setting.
 
   V2.conservativeResize(V2.rows(), 3);
@@ -240,7 +255,7 @@ int main(int argc, char **argv)
 
   // Now build the UV coordinates. Since the vertex XY plane location is the pixel location in the original image
   // we can just divide each pixel by the image dimension to get the UV.
-  Eigen::MatrixXd uv = computeUVcoordinates(V2, red.rows(), red.cols());
+  Eigen::MatrixXd uv = computeUVcoordinates(V2, alpha.rows(), alpha.cols());
   Eigen::MatrixXd dummy(0, 3);
 
   if(interactiveMode)

@@ -3,6 +3,12 @@ import json
 import subprocess
 import argparse
 import os
+import shutil
+
+mat_str = "newmtl baseColor\n\
+Ka 1.000000 1.000000 1.000000\n\
+Kd 1.000000 1.000000 1.000000\n\
+map_Kd "
 
 def binarizeImage(imgPath):
     imgOrg = cv.flip(cv.imread(imgPath), 0)
@@ -23,7 +29,7 @@ def binarizeAlphaImage(imgPath):
 def getContourHierachy(img, imgOrg):
     contours, hierarchy = cv.findContours(img, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE)
 
-    img2 = cv.drawContours(imgOrg, contours, -1, (0, 255, 0), 1)
+    img2 = cv.drawContours(imgOrg, contours, -1, (255, 0, 0), 3)
     return img2, contours, hierarchy
 
 
@@ -51,10 +57,25 @@ def imageProcessing(input_path):
     cv.waitKey(0)
     cv.destroyAllWindows()
 
+def writeMaterial(input_image, output_obj):
+    material_data = mat_str + os.path.basename(input_image)
+    mat_path = os.path.join(os.path.dirname(output_obj), os.path.splitext(os.path.basename(output_obj))[0]) + '.mtl'
+    with open(mat_path, 'w') as matFile:
+        matFile.write(material_data)
+    shutil.copy(input_image, os.path.join(os.path.dirname(output_obj), os.path.basename(input_image)))
+    # last need to update the obj data.
+    with open(output_obj, 'r+') as objFile:
+        content = objFile.read()
+        objFile.seek(0, 0)
+        material_reference = "mtllib " + os.path.basename(mat_path) + "\nusemtl baseColor\n"
+        objFile.write(material_reference + content)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("LogoMaker 1.0")
-    parser.add_argument("-i", "--input", help="the input image that is binarized to create the 2.1D model", type=str)
+    parser.add_argument("-i", "--input", help="the input image that is alpha transparent in background to create the 2.1D model", type=str)
     parser.add_argument("-e", "--executable", help="the executable to create the model", type=str)
+    parser.add_argument("-t", "--thickness", help="the thickness of the asin", type=str)
     parser.add_argument("-o", "--output", help="the output obj path", type=str)
 
     args = parser.parse_args()
@@ -63,8 +84,9 @@ if __name__ == "__main__":
     print("Call cpp to generate mesh.")
     if not os.path.exists(args.executable):
         print("do not work on modeling part.")
-    args = (args.executable, 'B', './data.json', args.output, 'a1000q30', args.input) #a1000q30
-    popen = subprocess.Popen(args, stdout=subprocess.PIPE)
+    exe_args = (args.executable, 'B', args.thickness, './data.json', args.output, 'a1000q30', args.input) #a1000q30
+    popen = subprocess.Popen(exe_args, stdout=subprocess.PIPE)
     popen.wait()
+    writeMaterial(args.input, args.output)
     output = popen.stdout.read()
     print(output)
