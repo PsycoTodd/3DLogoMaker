@@ -72,19 +72,26 @@ def writeMaterial(input_image, output_obj):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("LogoMaker 1.0")
+    parser = argparse.ArgumentParser("LogoMaker 1.5")
     parser.add_argument("-i", "--input", help="the input image that is alpha transparent in background to create the 2.1D model", type=str)
+    parser.add_argument("-j", "--json", help="the json that has the formatted hierarchy and contour info, if you already have it.", nargs='?', default = '', type=str)
     parser.add_argument("-e", "--executable", help="the executable to create the model", type=str)
-    parser.add_argument("-t", "--thickness", help="the thickness of the asin", type=str)
+    parser.add_argument("-x", "--width", help="the width of the object", type=str)
+    parser.add_argument("-y", "--height", help="the height of the object", type=str)
+    parser.add_argument("-t", "--thickness", help="the thickness of the object", type=str)
     parser.add_argument("-o", "--output", help="the output obj path", type=str)
+    parser.add_argument("-r", "--rotateN90", help="if the object is laydown, put Y here", type=str, default="N")
 
     args = parser.parse_args()
-    imageProcessing(args.input)
-
+    json_path = './data.json'
+    if args.json == '':
+        imageProcessing(args.input)
+    else:
+        json_path = args.json
     print("Call cpp to generate mesh.")
     if not os.path.exists(args.executable):
-        print("do not work on modeling part.")
-    exe_args = (args.executable, 'B', args.thickness, './data.json', args.output, 'a1000q30', args.input) #a1000q30
+        print("do not work on modeling part since executable is not available.")
+    exe_args = (args.executable, 'B', args.width, args.height, args.thickness, json_path, args.output, 'a1000q30', args.input, args.rotateN90) #a1000q30
     popen = subprocess.Popen(exe_args, stdout=subprocess.PIPE)
     popen.wait()
     writeMaterial(args.input, args.output)

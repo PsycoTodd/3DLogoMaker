@@ -1,7 +1,7 @@
 #include <igl/boundary_loop.h>
 #include <igl/opengl/glfw/Viewer.h>
 #include <igl/triangle/triangulate.h>
-#include <igl/stb/read_image.h>
+#include <igl/png/readPNG.h>
 #include <igl/writeOBJ.h>
 #include "nlohmann/json.hpp"
 #include <fstream>
@@ -57,7 +57,7 @@ Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic>
 loadImageAlphaChannel(const std::string& imgPath)
 {
   Eigen::Matrix<unsigned char,Eigen::Dynamic,Eigen::Dynamic> r, g, b, a;
-  igl::stb::read_image(imgPath, r, g, b, a);
+  igl::png::readPNG(imgPath, r, g, b, a);
   return a;
 }
 
@@ -136,19 +136,43 @@ Eigen::MatrixXd computeUVcoordinates(const Eigen::MatrixXd& vertices, size_t img
     return ret;
 }
 
+void adjustModelShape(Eigen::MatrixXd& vertices, size_t image_width, size_t image_height, float width_in_meter, float height_in_meter, bool rotate_n90_along_x) {
+    float scaleFactorW = width_in_meter / image_width;
+    float scaleFactorH = height_in_meter / image_height;
+    Eigen::Matrix3d translationMat;
+    translationMat << scaleFactorW, 0, 0,
+                      0, scaleFactorH, 0,
+                      0, 0, 1;
+    vertices = vertices * translationMat;
+    Eigen::RowVectorXd mean = vertices.colwise().mean();
+    mean.row(0)[2] = 0; //not change the Z value
+    vertices = vertices - mean.replicate(vertices.rows(), 1);
+    if (rotate_n90_along_x) {
+        Eigen::Matrix3d rotationMat;
+        rotationMat << 1, 0, 0,
+                       0, 0, -1,
+                       0, 1, 0; // because it is column major and multiply after vetices.
+        vertices = vertices * rotationMat;
+    }
+}
+
 int main(int argc, char **argv)
 {
-  if(argc < 7) {
-    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_thickness> <input_Contour_Json> <Output_Obj_Path> <triangulationParameter> <Original_image_path>" <<std::endl;
+  if(argc < 8) {
+    std::cout<<"Please call by providing <(I)nterative/(B)atch> <input_width> <input_height> <input_thickness> "
+               "<input_Contour_Json> <Output_Obj_Path> <triangulationParameter> <Original_image_path> <rotate_n90_along_x>" <<std::endl;
     return -1;
   }
   std::string modeStr = argv[1];
   bool interactiveMode = (modeStr == "I" ? true : false);
-  int input_thickness = atoi(argv[2]);
-  std::string inputJson = argv[3];
-  std::string outputPath = argv[4];
-  std::string triangulationSetting = argv[5];
-  std::string imagePath = argv[6];
+  float input_width = atof(argv[2]);
+  float input_height = atof(argv[3]);
+  float input_thickness = atof(argv[4]);
+  std::string inputJson = argv[5];
+  std::string outputPath = argv[6];
+  std::string triangulationSetting = argv[7];
+  std::string imagePath = argv[8];
+  bool rotate_n90_along_x = (*argv[9] == 'Y' ? true : false);
 
   std::vector<Eigen::MatrixXd> contours;
   std::vector<std::vector<int>> layout;
@@ -215,7 +239,7 @@ int main(int argc, char **argv)
   igl::triangle::triangulate(V,E,H,triangulationSetting,V2,F2); // u can use a5q for the setting.
 
   V2.conservativeResize(V2.rows(), 3);
-  V2.rightCols(1) = 4 * Eigen::MatrixXd::Ones(V2.rows(), 1);
+  V2.rightCols(1) = input_thickness * Eigen::MatrixXd::Ones(V2.rows(), 1);
 
   Eigen::MatrixXd Vext = V2 - Eigen::RowVector3d(0.0, 0.0, input_thickness).replicate(V2.rows(), 1);
   Eigen::MatrixXi Fext = F2;
@@ -256,8 +280,11 @@ int main(int argc, char **argv)
   // Now build the UV coordinates. Since the vertex XY plane location is the pixel location in the original image
   // we can just divide each pixel by the image dimension to get the UV.
   Eigen::MatrixXd uv = computeUVcoordinates(V2, alpha.rows(), alpha.cols());
-  Eigen::MatrixXd dummy(0, 3);
 
+  // Next, shift the model to be centralized and also change the size to be real size.
+  adjustModelShape(V2, alpha.rows(), alpha.cols(), input_width, input_height, rotate_n90_along_x);
+
+  Eigen::MatrixXd dummy(0, 3);
   if(interactiveMode)
   {
     igl::opengl::glfw::Viewer viewer;

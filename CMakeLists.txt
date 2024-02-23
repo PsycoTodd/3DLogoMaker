@@ -10,11 +10,12 @@ include(libigl)
 igl_include(glfw)
 igl_include(opengl)
 igl_include(restricted triangle)
+igl_include(png)
 # Other modules you could enable
 #igl_include(embree)
 #igl_include(imgui)
 #igl_include(opengl)
-igl_include(stb)
+#igl_include(stb)
 #igl_include(predicates)
 #igl_include(xml)
 #igl_include(copyleft cgal)
@@ -34,11 +35,12 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_link_libraries(${PROJECT_NAME} PUBLIC
   igl::glfw
   igl::core
+  igl::png
   ## Other modules you could link to
   # igl::embree
   # igl::imgui
   # igl::opengl
-   igl::stb
+  # igl::stb
   # igl::predicates
   # igl::xml
   # igl_copyleft::cgal
